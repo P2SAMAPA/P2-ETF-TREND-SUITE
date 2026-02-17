@@ -1,0 +1,8 @@
+streamlit
+pandas
+numpy
+yfinance
+datasets
+huggingface_hub
+fredapi
+scipy
