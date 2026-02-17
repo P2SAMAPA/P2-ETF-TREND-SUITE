@@ -1,26 +1,21 @@
-import numpy as np
-import pandas as pd
+def compute_metrics(returns):
 
-def compute_metrics(returns, sofr):
+    import numpy as np
 
-    sofr_daily = sofr.reindex(returns.index).fillna(method="ffill")["sofr"] / 252
-    excess = returns - sofr_daily
+    ann_factor = 252
 
-    sharpe = np.sqrt(252) * excess.mean() / excess.std()
+    cagr = (1 + returns.mean()) ** ann_factor - 1
+    vol = returns.std() * (ann_factor ** 0.5)
+    sharpe = cagr / vol if vol != 0 else 0
 
-    equity = (1 + returns).cumprod()
-    cagr = equity.iloc[-1] ** (252 / len(equity)) - 1
-
-    vol = returns.std() * np.sqrt(252)
-
-    rolling_max = equity.cummax()
-    drawdown = equity / rolling_max - 1
+    cumulative = (1 + returns).cumprod()
+    peak = cumulative.cummax()
+    drawdown = (cumulative - peak) / peak
     max_dd = drawdown.min()
 
     return {
-        "sharpe": sharpe,
         "cagr": cagr,
         "vol": vol,
-        "max_dd": max_dd
+        "sharpe": sharpe,
+        "max_dd": max_dd,
     }
-
