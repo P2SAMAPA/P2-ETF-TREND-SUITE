@@ -1,0 +1,33 @@
+name: Sync to Hugging Face Space
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  sync-to-hf:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Git LFS
+        run: |
+          git lfs install
+
+      - name: Push to Hugging Face Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name "github-actions"
+
+          git clone https://huggingface.co/spaces/P2SAMAPA/P2-ETF-TREND-SUITE hf_space
+          rsync -av --exclude='.git' --exclude='.github' ./ hf_space/
+
+          cd hf_space
+          git add .
+          git commit -m "Sync from GitHub" || echo "No changes to commit"
+          git push https://P2SAMAPA:${HF_TOKEN}@huggingface.co/spaces/P2SAMAPA/P2-ETF-TREND-SUITE main
