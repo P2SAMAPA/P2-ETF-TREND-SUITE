@@ -6,7 +6,6 @@ from engine.trend_engine import run_trend_module
 
 st.set_page_config(layout="wide", page_title="P2 Strategy Suite")
 
-# Initialize Session State safely
 if 'master_data' not in st.session_state:
     st.session_state.master_data = load_from_hf()
 
@@ -43,14 +42,14 @@ if st.session_state.master_data is not None:
         
         st.title(f"📊 {option}: {sub_option}")
         
-        # Row 1: Metrics
+        # Row 1: Metrics (Annual Return First)
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Annual Return", f"{results['ann_ret']:.1%}")
         m2.metric("Sharpe Ratio", f"{results['sharpe']:.2f}")
         m3.metric("Max Drawdown", f"{results['max_dd']:.1%}")
         m4.metric("Current SOFR", f"{results['current_sofr']:.2%}")
 
-        # Row 2: Performance Chart
+        # Row 2: Performance Chart (Interactive Years)
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=results['equity_curve'].index, y=results['equity_curve'], name='Strategy'))
         fig.add_trace(go.Scatter(x=results['bench_curve'].index, y=results['bench_curve'], name=f'Benchmark ({bench})'))
@@ -74,10 +73,10 @@ if st.session_state.master_data is not None:
             This strategy implements the **2025 Charles H. Dow Award** winning framework by **Andrea Zarattini** and **Michael Antonacci**.
             
             1. **Regime Identification**: A dual 50/200-day SMA filter determines asset eligibility. 
-            2. **Conviction Ranking**: Assets are ranked by their distance from the 200-day SMA.
-            3. **Concentrated Sizing**: Under the **{sub_option}** setting, the system focuses the risk budget only on the top leaders.
+            2. **Conviction Ranking**: Assets are ranked by their distance from the 200-day SMA (Trend Strength).
+            3. **Concentrated Sizing**: In **{sub_option}** mode, the risk budget is focused only on top leaders.
             4. **Volatility Targeting**: Allocations are sized inversely to 60-day volatility to maintain a stable **{vol_target:.0%}** risk profile.
-            5. **Cash Buffer**: Remaining budget earns the live SOFR rate.
+            5. **Cash Buffer**: Remaining budget earns the live SOFR rate (Federal Reserve Bank of New York).
             """)
     else:
         st.info("💡 Adjust settings and click 'Run Analysis'.")
