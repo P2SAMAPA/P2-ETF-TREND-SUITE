@@ -1,8 +1,6 @@
 streamlit
 pandas
-numpy
 yfinance
+pandas-datareader
 datasets
 huggingface_hub
-fredapi
-scipy
