@@ -4,3 +4,4 @@ pandas-datareader
 yfinance
 numpy
 pandas_market_calendars
+huggingface_hub
