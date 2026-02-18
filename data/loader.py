@@ -9,47 +9,21 @@ import streamlit as st
 REPO_ID = "P2SAMAPA/etf_trend_data"
 FILENAME = "market_data.csv"
 
-def seed_dataset():
-    tickers = list(set(X_EQUITY_TICKERS + FI_TICKERS + ["SPY", "AGG"]))
-    master_df = pd.DataFrame()
-    
-    st.info("🛰️ Initializing Stooq Data Fetch (2008-Present)...")
-    progress_bar = st.progress(0)
-    
-    for i, ticker in enumerate(tickers):
-        # Stooq ticker format is usually 'TICKER.US'
-        stooq_symbol = f"{ticker}.US"
-        try:
-            # PRIMARY: STOOQ
-            data = web.DataReader(stooq_symbol, 'stooq', start='2008-01-01')
-            if not data.empty:
-                # Stooq returns data in reverse chronological order; we sort it.
-                master_df[ticker] = data['Close'].sort_index()
-            
-            # Anti-Rate Limit: 0.8s delay between requests
-            time.sleep(0.8) 
-            
-        except Exception as e:
-            st.warning(f"⚠️ Stooq failed for {ticker}. Attempting YFinance fallback...")
-            try:
-                # BACKUP: YFinance
-                yf_data = yf.download(ticker, start="2008-01-01", progress=False)['Adj Close']
-                master_df[ticker] = yf_data
-            except:
-                st.error(f"❌ Failed to fetch {ticker} from all sources.")
-        
-        progress_bar.progress((i + 1) / len(tickers))
-    
-    # Add SOFR (Cash Rate) from FRED
+# Make sure these match exactly what app.py expects
+def load_from_hf():
+    token = st.secrets.get("HF_TOKEN")
+    if not token: return None
     try:
-        sofr = web.DataReader('SOFR', 'fred', start="2008-01-01").ffill()
-        master_df['SOFR_ANNUAL'] = sofr / 100
+        path = hf_hub_download(repo_id=REPO_ID, filename=FILENAME, repo_type="dataset", token=token)
+        return pd.read_csv(path, index_col=0, parse_dates=True)
     except:
-        master_df['SOFR_ANNUAL'] = 0.05 # Conservative fallback
+        return None
 
-    master_df = master_df.sort_index().ffill()
-    
-    # Save & Upload
-    master_df.to_csv(FILENAME)
-    upload_to_hf(FILENAME)
+def seed_dataset_from_scratch():
+    # ... (Your Stooq download logic here)
+    # Ensure this function name matches the import in app.py
     return master_df
+
+def sync_incremental_data(df_existing):
+    # ... (Your incremental update logic here)
+    return combined
