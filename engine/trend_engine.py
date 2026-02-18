@@ -3,7 +3,7 @@ import numpy as np
 import pandas_market_calendars as mcal
 
 def run_trend_module(price_df, bench_series, sofr_series, target_vol, start_yr):
-    # 1. Full period calculations for signals (Training + OOS)
+    # 1. Full-period math for indicators
     sma_fast = price_df.rolling(50).mean()
     sma_slow = price_df.rolling(200).mean()
     signals = (sma_fast > sma_slow).astype(int)
@@ -18,7 +18,7 @@ def run_trend_module(price_df, bench_series, sofr_series, target_vol, start_yr):
     strat_returns = asset_ret + (cash_pct.shift(1) * (sofr_series.shift(1) / 252))
     bench_returns = bench_series.pct_change().fillna(0)
     
-    # 3. Filter for Out-of-Sample (OOS) Period
+    # 3. Slice for OOS Period
     oos_mask = strat_returns.index.year >= start_yr
     oos_strat = strat_returns[oos_mask]
     oos_bench = bench_returns[oos_mask]
@@ -26,11 +26,11 @@ def run_trend_module(price_df, bench_series, sofr_series, target_vol, start_yr):
     equity_curve = (1 + oos_strat).cumprod()
     bench_curve = (1 + oos_bench).cumprod()
     
-    # 4. Drawdown Stats
+    # 4. Drawdowns
     hwm = equity_curve.cummax()
     dd_series = (equity_curve / hwm) - 1
     
-    # 5. NYSE Next Day
+    # 5. Next Day Trading Date
     nyse = mcal.get_calendar('NYSE')
     last_dt = price_df.index[-1]
     sched = nyse.schedule(start_date=last_dt, end_date=last_dt + pd.Timedelta(days=10))
