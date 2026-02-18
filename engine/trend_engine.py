@@ -1,47 +1,58 @@
 import pandas as pd
 import numpy as np
+import pandas_market_calendars as mcal
 
-def run_trend_module(price_df, sofr_series, target_vol=0.12):
+def run_trend_module(price_df, benchmark_df, sofr_series, target_vol=0.12):
     """
-    Implements 2025 Dow Award Logic.
+    Enhanced Engine for 2025 Dow Award Logic.
+    Includes Dual Drawdowns and Benchmark Comparison.
     """
-    # 1. Dual-Trend Signal (Fast vs Slow SMA)
+    # 1. Signals & Weights
     sma_fast = price_df.rolling(50).mean()
     sma_slow = price_df.rolling(200).mean()
-    # Signal is 1 if in trend, 0 if cash
     signals = (sma_fast > sma_slow).astype(int)
     
-    # 2. Volatility Targeting (Inverse Vol Sizing)
     returns = price_df.pct_change()
     realized_vol = returns.rolling(60).std() * np.sqrt(252)
-    # Weights = Target Vol / Realized Vol
-    weights = (target_vol / realized_vol).fillna(0)
-    weights = weights.clip(upper=1.5) # Cap leverage at 150%
+    weights = (target_vol / realized_vol).fillna(0).clip(upper=1.5)
     
-    # 3. Portfolio Returns
-    # Position = Signal * Weight
-    asset_returns = (signals.shift(1) * weights.shift(1) * returns).mean(axis=1)
+    # 2. Returns Calculation
+    # Strategy
+    asset_ret = (signals.shift(1) * weights.shift(1) * returns).mean(axis=1)
+    cash_pct = 1 - signals.mean(axis=1)
+    strat_returns = asset_ret + (cash_pct.shift(1) * (sofr_series.shift(1) / 252))
     
-    # 4. Interest on Cash (SOFR)
-    # If signals are 0 (in cash), we earn SOFR
-    cash_percentage = 1 - signals.mean(axis=1)
-    interest_returns = (cash_percentage.shift(1) * (sofr_series.shift(1) / 252))
+    # Benchmark (Buy & Hold)
+    bench_returns = benchmark_df.pct_change().fillna(0)
     
-    total_returns = asset_returns + interest_returns
-    equity_curve = (1 + total_returns).fillna(0).cumprod()
+    # Equity Curves
+    equity_curve = (1 + strat_returns).cumprod()
+    bench_curve = (1 + bench_returns).cumprod()
     
-    # 5. Metrics
-    ann_ret = total_returns.mean() * 252
-    ann_vol = total_returns.std() * np.sqrt(252)
-    sharpe = (ann_ret - 0.035) / ann_vol if ann_vol > 0 else 0
+    # 3. Drawdown Calculations
+    def get_dd_stats(curve):
+        hwm = curve.cummax()
+        dd = (curve / hwm) - 1
+        return dd.min(), dd # Max DD and the full DD series
     
-    dd = equity_curve / equity_curve.cummax() - 1
-    max_dd = dd.min()
+    max_dd_peak, dd_series = get_dd_stats(equity_curve)
+    
+    # 4. Next Trading Day & Allocations (NYSE Calendar)
+    nyse = mcal.get_calendar('NYSE')
+    last_date = price_df.index[-1]
+    next_day = nyse.valid_days(start_date=last_date + pd.Timedelta(days=1), end_date=last_date + pd.Timedelta(days=10))[0]
+    
+    # Current Allocations (Based on most recent signals)
+    current_signals = signals.iloc[-1]
+    active_assets = current_signals[current_signals > 0].index.tolist()
     
     return {
         'equity_curve': equity_curve,
-        'sharpe': sharpe,
-        'ann_ret': ann_ret,
-        'max_dd': max_dd,
-        'current_signals': signals.iloc[-1]
+        'bench_curve': bench_curve,
+        'strat_ret_series': strat_returns,
+        'max_dd_peak': max_dd_peak,
+        'dd_series': dd_series,
+        'next_trading_day': next_day.date(),
+        'active_assets': active_assets,
+        'signals': current_signals
     }
