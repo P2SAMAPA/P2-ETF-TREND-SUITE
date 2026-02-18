@@ -1,45 +1,41 @@
 import streamlit as st
-import pandas as pd
 from data.loader import load_from_hf, seed_dataset_from_scratch, sync_incremental_data
 
-st.set_page_config(layout="wide", page_title="P2 Trend Suite")
+st.set_page_config(layout="wide", page_title="P2 Strategy Suite")
 
-# --- SIDEBAR: DATA MANAGEMENT ---
-st.sidebar.title("🗂️ Data Management")
-
-# Initialize Session State
+# 1. Initialize Session State Data
 if 'master_data' not in st.session_state:
     st.session_state.master_data = load_from_hf()
 
-# LOGIC: If no data, show SEED. If data exists, show SYNC.
-if st.session_state.master_data is None:
-    st.sidebar.warning("Database not found.")
-    if st.sidebar.button("🚀 Step 1: Seed Database (2008-2026)"):
-        with st.spinner("Downloading full history..."):
-            st.session_state.master_data = seed_dataset_from_scratch()
-            st.sidebar.success("Database Seeded!")
-            st.rerun()
-else:
-    st.sidebar.success(f"Database Active: {st.session_state.master_data.index.max()}")
+# 2. Sidebar Layout
+with st.sidebar:
+    st.title("🗂️ Data Management")
     
-    # SYNC BUTTON for daily incremental updates
-    if st.sidebar.button("🔄 Step 2: Sync Daily Data"):
-        with st.spinner("Pinging Stooq/FRED for new data..."):
-            st.session_state.master_data = sync_incremental_data(st.session_state.master_data)
-            st.sidebar.success("Incremental Sync Complete!")
+    if st.session_state.master_data is None:
+        st.error("No dataset detected in repository.")
+        if st.button("🚀 Seed Database (2008-Present)", use_container_width=True):
+            st.session_state.master_data = seed_dataset_from_scratch()
             st.rerun()
+    else:
+        last_dt = st.session_state.master_data.index.max()
+        st.success(f"Database Active\nLast Date: {last_dt.date()}")
+        
+        if st.button("🔄 Sync Daily Data", use_container_width=True):
+            with st.spinner("Updating records..."):
+                st.session_state.master_data = sync_incremental_data(st.session_state.master_data)
+                st.rerun()
+    
+    st.divider()
+    st.title("⚙️ Strategy Settings")
+    option = st.sidebar.radio("Strategy Type", ("Option A - FI Trend", "Option B - Equity Trend"))
+    start_yr = st.sidebar.slider("Start Year", 2008, 2026, 2015)
+    vol_target = st.sidebar.slider("Vol Target (%)", 5, 25, 12) / 100
 
-# --- SIDEBAR: STRATEGY CONTROLS ---
-st.sidebar.divider()
-st.sidebar.title("⚙️ Strategy Settings")
-option = st.sidebar.radio("Select Module", ("Option A - FI Trend", "Option B - Equity Trend"))
-start_year = st.sidebar.slider("Start Year", 2008, 2026, 2015)
-vol_target = st.sidebar.slider("Annual Vol Target", 0.05, 0.25, 0.126)
-
-# --- MAIN UI: ANALYSIS ---
+# 3. Main Page
 if st.session_state.master_data is not None:
-    # Your strategy execution code here...
-    st.title(f"📊 {option}")
-    # ...
+    st.title(f"📊 {option} Performance")
+    # filtered_data = st.session_state.master_data[st.session_state.master_data.index.year >= start_yr]
+    # engine_results = run_strategy(filtered_data, vol_target)
+    st.info("Strategy Engine ready. Select parameters in the sidebar to begin analysis.")
 else:
-    st.info("Please use the sidebar to Seed the database first.")
+    st.warning("👈 Please click the 'Seed' button in the sidebar to initialize the historical data.")
