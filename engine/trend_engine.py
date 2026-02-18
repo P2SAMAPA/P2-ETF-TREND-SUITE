@@ -17,16 +17,13 @@ def run_trend_module(price_df, bench_series, sofr_series, target_vol, start_yr, 
     
     # 3. Apply Sub-Option Concentration
     if sub_option == "3 Highest Conviction":
-        # Rank daily: 1 is highest conviction
         ranks = conviction_score.rank(axis=1, ascending=False)
         signals = ((ranks <= 3) & (signals == 1)).astype(int)
     elif sub_option == "1 Highest Conviction":
         ranks = conviction_score.rank(axis=1, ascending=False)
         signals = ((ranks <= 1) & (signals == 1)).astype(int)
-    # Else: "All Trending ETFs" uses the base signals
     
     # 4. Volatility Target Weighting
-    # Methodology: Target Vol / Asset Vol, distributed across active signals
     active_counts = signals.sum(axis=1)
     raw_weights = (target_vol / asset_vol).divide(active_counts, axis=0).replace([np.inf, -np.inf], 0).fillna(0)
     final_weights = raw_weights * signals
@@ -53,10 +50,17 @@ def run_trend_module(price_df, bench_series, sofr_series, target_vol, start_yr, 
     ann_vol = portfolio_ret[oos_mask].std() * np.sqrt(252)
     dd = (equity_curve / equity_curve.cummax()) - 1
     
-    # NYSE Calendar
+    # --- FIXED NEXT DAY LOGIC ---
     nyse = mcal.get_calendar('NYSE')
     last_dt = price_df.index[-1]
-    next_day = nyse.schedule(start_date=last_dt, end_date=last_dt + pd.Timedelta(days=10)).index[1]
+    
+    # Generate schedule starting from the day AFTER last_dt to ensure we find the future open
+    search_start = last_dt + pd.Timedelta(days=1)
+    sched = nyse.schedule(start_date=search_start, end_date=search_start + pd.Timedelta(days=10))
+    
+    # Take the first valid trading day from the future schedule
+    next_day = sched.index[0] 
+    # ----------------------------
     
     return {
         'equity_curve': equity_curve,
