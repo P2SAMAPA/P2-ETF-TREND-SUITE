@@ -1,35 +1,45 @@
 import streamlit as st
 import pandas as pd
-import pandas_market_calendars as mcal
-from datetime import datetime
-from data.loader import load_from_hf, seed_dataset, X_EQUITY_TICKERS, FI_TICKERS
-from engine.trend_engine import run_trend_module
+from data.loader import load_from_hf, seed_dataset_from_scratch, sync_incremental_data
 
 st.set_page_config(layout="wide", page_title="P2 Trend Suite")
 
-# Sidebar Logic
-st.sidebar.title("Configuration")
-option = st.sidebar.radio("Select Strategy", ("Option A - FI Trend Follower", "Option B - Equity Trend Follower"))
-start_year = st.sidebar.slider("Start Year", 2008, 2026, 2015)
-vol_target = st.sidebar.slider("Annual Vol Target", 0.05, 0.25, 0.12)
+# --- SIDEBAR: DATA MANAGEMENT ---
+st.sidebar.title("🗂️ Data Management")
 
-# Data Initialization
-if 'data' not in st.session_state:
-    st.session_state.data = load_from_hf()
+# Initialize Session State
+if 'master_data' not in st.session_state:
+    st.session_state.master_data = load_from_hf()
 
-if st.session_state.data is None:
-    if st.button("🚀 First Time Setup: Seed 2008-2026 Data"):
-        st.session_state.data = seed_dataset()
-        st.rerun()
+# LOGIC: If no data, show SEED. If data exists, show SYNC.
+if st.session_state.master_data is None:
+    st.sidebar.warning("Database not found.")
+    if st.sidebar.button("🚀 Step 1: Seed Database (2008-2026)"):
+        with st.spinner("Downloading full history..."):
+            st.session_state.master_data = seed_dataset_from_scratch()
+            st.sidebar.success("Database Seeded!")
+            st.rerun()
 else:
-    # RUN STRATEGY
-    universe = FI_TICKERS if "Option A" in option else X_EQUITY_TICKERS
-    bench = "AGG" if "Option A" in option else "SPY"
+    st.sidebar.success(f"Database Active: {st.session_state.master_data.index.max()}")
     
-    # Filter by Year
-    d = st.session_state.data[st.session_state.data.index.year >= start_year]
-    results = run_trend_module(d[universe], d['SOFR_ANNUAL'], vol_target)
-    
-    # UI OUTPUTS (Sharpe, Max DD, etc.)
-    st.title(f"📈 {option} Performance")
-    # ... (Insert Metric & Chart code here)
+    # SYNC BUTTON for daily incremental updates
+    if st.sidebar.button("🔄 Step 2: Sync Daily Data"):
+        with st.spinner("Pinging Stooq/FRED for new data..."):
+            st.session_state.master_data = sync_incremental_data(st.session_state.master_data)
+            st.sidebar.success("Incremental Sync Complete!")
+            st.rerun()
+
+# --- SIDEBAR: STRATEGY CONTROLS ---
+st.sidebar.divider()
+st.sidebar.title("⚙️ Strategy Settings")
+option = st.sidebar.radio("Select Module", ("Option A - FI Trend", "Option B - Equity Trend"))
+start_year = st.sidebar.slider("Start Year", 2008, 2026, 2015)
+vol_target = st.sidebar.slider("Annual Vol Target", 0.05, 0.25, 0.126)
+
+# --- MAIN UI: ANALYSIS ---
+if st.session_state.master_data is not None:
+    # Your strategy execution code here...
+    st.title(f"📊 {option}")
+    # ...
+else:
+    st.info("Please use the sidebar to Seed the database first.")
