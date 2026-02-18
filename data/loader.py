@@ -14,7 +14,7 @@ X_EQUITY_TICKERS = ["XLK", "XLY", "XLP", "XLE", "XLV", "XLI", "XLB", "XLRE", "XL
 FI_TICKERS = ["TLT", "IEF", "TIP", "TBT", "GLD", "SLV", "VGIT", "VCLT", "VCIT", "HYG", "PFF", "MBB", "VNQ", "LQD", "AGG"]
 
 def get_hf_token():
-    """Safely retrieves the token without triggering a SecretNotFoundError crash."""
+    """Safely retrieves the token from secrets or environment."""
     try:
         return st.secrets["HF_TOKEN"]
     except:
@@ -32,7 +32,7 @@ def load_from_hf():
         return None
 
 def seed_dataset_from_scratch():
-    """Downloads 2008-Present data from STOOQ."""
+    """Initial download of 18 years of data using Stooq primarily."""
     tickers = list(set(X_EQUITY_TICKERS + FI_TICKERS + ["SPY", "AGG"]))
     master_df = pd.DataFrame()
     
@@ -42,13 +42,13 @@ def seed_dataset_from_scratch():
     for i, ticker in enumerate(tickers):
         status.text(f"Fetching {ticker} from Stooq...")
         try:
-            # Stooq primary
+            # Stooq primary (requires .US suffix for ETFs)
             data = web.DataReader(f"{ticker}.US", 'stooq', start='2008-01-01')
             if not data.empty:
                 master_df[ticker] = data['Close'].sort_index()
-            time.sleep(0.6) # Anti-rate limit
+            time.sleep(0.6) 
         except:
-            # YFinance fallback
+            # YFinance fallback if Stooq fails for a ticker
             try:
                 yf_data = yf.download(ticker, start="2008-01-01", progress=False)['Adj Close']
                 master_df[ticker] = yf_data
@@ -56,12 +56,12 @@ def seed_dataset_from_scratch():
                 pass
         progress_bar.progress((i + 1) / len(tickers))
 
-    # Add SOFR Rate
+    # Add SOFR Rate (Cash interest)
     try:
         sofr = web.DataReader('SOFR', 'fred', start="2008-01-01").ffill()
         master_df['SOFR_ANNUAL'] = sofr / 100
     except:
-        master_df['SOFR_ANNUAL'] = 0.05
+        master_df['SOFR_ANNUAL'] = 0.045 # Conservative proxy
 
     master_df = master_df.sort_index().ffill()
     master_df.to_csv(FILENAME)
@@ -70,11 +70,10 @@ def seed_dataset_from_scratch():
     return master_df
 
 def sync_incremental_data(df_existing):
-    """Updates only new data since last index date."""
+    """Updates only new data since last index date using YFinance for speed."""
     last_date = pd.to_datetime(df_existing.index).max()
     tickers = list(set(X_EQUITY_TICKERS + FI_TICKERS + ["SPY", "AGG"]))
     
-    # Simple incremental fetch
     new_data = yf.download(tickers, start=last_date, progress=False)['Adj Close']
     combined = pd.concat([df_existing, new_data])
     combined = combined[~combined.index.duplicated(keep='last')].sort_index()
