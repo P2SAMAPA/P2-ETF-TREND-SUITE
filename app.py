@@ -1,54 +1,39 @@
 import streamlit as st
+import pandas as pd
+from data.loader import refresh_market_data, X_EQUITY_TICKERS, FI_TICKERS
+from engine.trend_engine import run_trend_module
 
-st.set_page_config(page_title="P2 ETF Trend Suite", layout="wide")
+st.set_page_config(layout="wide", page_title="P2 ETF Trend Suite")
 
-st.title("📊 P2 ETF Trend Suite")
-st.markdown("Stooq-Primary Data Engine + HF Integration")
+st.sidebar.title("Settings")
+vol_target = st.sidebar.slider("Annual Vol Target", 0.05, 0.25, 0.126)
 
-# Sidebar Controls
-st.sidebar.header("Parameters")
-initial_capital = st.sidebar.number_input("Initial Capital", value=100000)
-vol_target = st.sidebar.slider("Target Volatility", 0.05, 0.30, 0.15)
-lookback = st.sidebar.slider("Lookback (Days)", 50, 300, 200)
+if st.sidebar.button("🔄 Refresh Market Data"):
+    refresh_market_data()
+    st.sidebar.success("Data Updated from Stooq/SOFR!")
 
-st.sidebar.markdown("---")
-st.sidebar.header("Hugging Face Sync")
-hf_repo = st.sidebar.text_input("Repo ID", placeholder="user/dataset-name")
-hf_token = st.sidebar.text_input("HF Token", type="password")
-
-run_button = st.sidebar.button("▶ Run Full Process")
-
-if run_button:
-    from data.loader import load_data, push_to_hf
-    from engine.backtest import run_backtest
-    from analytics.metrics import compute_metrics
-
-    # Phase 1: Data Fetching
-    with st.spinner("Fetching data from Stooq..."):
-        df = load_data()
+if st.button("▶ Run All Modules"):
+    data = pd.read_csv("market_data.csv", index_col=0, parse_dates=True)
     
-    if not df.empty:
-        st.subheader("📈 Market Data Preview")
-        st.dataframe(df.tail(5), use_container_width=True)
+    # Run Modules
+    eq_res = run_trend_module(data[X_EQUITY_TICKERS], data['SOFR_ANNUAL'], vol_target)
+    fi_res = run_trend_module(data[FI_TICKERS], data['SOFR_ANNUAL'], vol_target)
+    
+    # Performance Comparison
+    spy_curve = (1 + data['SPY'].pct_change()).cumprod()
+    comparison = pd.DataFrame({
+        "X-ETF Strategy": eq_res['curve'],
+        "SPY Benchmark": spy_curve
+    }).dropna()
 
-        # Phase 2: Backtesting
-        with st.spinner("Calculating Trend Strategy..."):
-            results = run_backtest(df, initial_capital, vol_target, lookback)
-            metrics = compute_metrics(results["returns"])
-
-        # Display Results
-        st.success("Analysis Complete")
-        c1, c2, c3 = st.columns(3)
-        c1.metric("CAGR", f"{metrics['cagr']:.2%}")
-        c2.metric("Sharpe", f"{metrics['sharpe']:.2f}")
-        c3.metric("Max Drawdown", f"{metrics['max_dd']:.2%}")
-
-        st.line_chart(results["equity_curve"])
-
-        # Phase 3: HF Sync
-        if hf_repo and hf_token:
-            with st.spinner("Syncing to Hugging Face..."):
-                push_to_hf(df, hf_repo, hf_token)
-            st.sidebar.success("✅ Dataset Synced!")
-    else:
-        st.error("Data fetch failed. Verify ticker symbols.")
+    st.header("📈 Performance: Equity Strategy vs. SPY")
+    st.line_chart(comparison)
+    
+    # Target Allocations
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("🛡️ Equity Allocation (Next Day)")
+        st.dataframe(eq_res['alloc'][eq_res['alloc']['Weight (%)'] > 0])
+    with col2:
+        st.subheader("🏦 FI Comparison Allocation")
+        st.dataframe(fi_res['alloc'][fi_res['alloc']['Weight (%)'] > 0])
