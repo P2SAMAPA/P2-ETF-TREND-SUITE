@@ -3,54 +3,55 @@ import numpy as np
 import pandas_market_calendars as mcal
 
 def run_trend_module(price_df, bench_series, sofr_series, target_vol, start_yr, sub_option):
-    # 1. Trend Signals & Conviction Scoring
+    # 1. Trend & Conviction Logic
     sma_200 = price_df.rolling(200).mean()
     sma_50 = price_df.rolling(50).mean()
     
-    # Conviction Score = How far is the price above the 200 SMA?
+    # Conviction = Percentage distance above the 200 SMA
     conviction_score = (price_df / sma_200) - 1
     signals = (sma_50 > sma_200).astype(int)
     
-    # 2. Individual Asset Volatility
+    # 2. Risk Metrics
     returns = price_df.pct_change()
     asset_vol = returns.rolling(60).std() * np.sqrt(252)
     
-    # 3. CONVICTION FILTERING (Sub-Options)
+    # 3. Apply Sub-Option Concentration
     if sub_option == "3 Highest Conviction":
-        # Rank assets by score, keep only top 3 that are ALSO in trend
+        # Rank daily: 1 is highest conviction
         ranks = conviction_score.rank(axis=1, ascending=False)
         signals = ((ranks <= 3) & (signals == 1)).astype(int)
     elif sub_option == "1 Highest Conviction":
-        # Rank assets, keep only the top 1 that is ALSO in trend
         ranks = conviction_score.rank(axis=1, ascending=False)
         signals = ((ranks <= 1) & (signals == 1)).astype(int)
-    # "All Trending" remains as is
+    # Else: "All Trending ETFs" uses the base signals
     
-    # 4. Volatility Scaling
+    # 4. Volatility Target Weighting
+    # Methodology: Target Vol / Asset Vol, distributed across active signals
     active_counts = signals.sum(axis=1)
-    # Inverse vol weight per asset
     raw_weights = (target_vol / asset_vol).divide(active_counts, axis=0).replace([np.inf, -np.inf], 0).fillna(0)
     final_weights = raw_weights * signals
     
-    # 5. Leverage Cap & Cash
+    # 5. Leverage Cap (1.5x)
     total_exposure = final_weights.sum(axis=1)
     scale_factor = total_exposure.apply(lambda x: 1.5/x if x > 1.5 else 1.0)
     final_weights = final_weights.multiply(scale_factor, axis=0)
     
+    # 6. Cash (SOFR) Allocation
     cash_weight = 1.0 - final_weights.sum(axis=1)
     
-    # 6. Performance Calculation
+    # 7. Portfolio Returns
     portfolio_ret = (final_weights.shift(1) * returns).sum(axis=1)
     portfolio_ret += cash_weight.shift(1) * (sofr_series.shift(1) / 252)
     
-    # 7. OOS Filtering
+    # 8. Out-of-Sample Slicing
     oos_mask = portfolio_ret.index.year >= start_yr
     equity_curve = (1 + portfolio_ret[oos_mask]).cumprod()
     bench_curve = (1 + bench_series.pct_change().fillna(0)[oos_mask]).cumprod()
     
-    # 8. Stats
-    dd = (equity_curve / equity_curve.cummax()) - 1
+    # Stats
     ann_ret = portfolio_ret[oos_mask].mean() * 252
+    ann_vol = portfolio_ret[oos_mask].std() * np.sqrt(252)
+    dd = (equity_curve / equity_curve.cummax()) - 1
     
     # NYSE Calendar
     nyse = mcal.get_calendar('NYSE')
@@ -61,7 +62,7 @@ def run_trend_module(price_df, bench_series, sofr_series, target_vol, start_yr, 
         'equity_curve': equity_curve,
         'bench_curve': bench_curve,
         'ann_ret': ann_ret,
-        'sharpe': (ann_ret - sofr_series.iloc[-1]) / (portfolio_ret[oos_mask].std() * np.sqrt(252)),
+        'sharpe': (ann_ret - sofr_series.iloc[-1]) / ann_vol if ann_vol > 0 else 0,
         'max_dd': dd.min(),
         'next_day': next_day.date(),
         'current_weights': final_weights.iloc[-1],
