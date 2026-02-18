@@ -11,78 +11,89 @@ st.set_page_config(layout="wide", page_title="P2 Trend Suite")
 # --- SIDEBAR UI ---
 st.sidebar.title("Strategy Controls")
 
-# 1. Option Selection
-option = st.sidebar.radio("Select Strategy Module", 
+# 1. Module Toggle
+option = st.sidebar.radio("Select Module", 
                          ("Option A - FI Trend Follower", "Option B - Equity Trend Follower"))
 
 # 2. Year Slider
-start_year = st.sidebar.slider("Start Year (OOS Period)", 2008, 2025, 2015)
+start_year = st.sidebar.slider("Start Year", 2008, 2026, 2015)
 
-# 3. Vol Target & Sync
+# 3. Parameters
 vol_target = st.sidebar.slider("Annual Vol Target", 0.05, 0.25, 0.126)
+
 if st.sidebar.button("🔄 Sync Market Data"):
-    refresh_market_data()
+    with st.spinner("Fetching Data..."):
+        refresh_market_data()
     st.sidebar.success("Data Synced!")
 
-# --- CALENDAR LOGIC ---
-nyse = mcal.get_calendar('NYSE')
-today = datetime.now().strftime('%Y-%m-%d')
-schedule = nyse.schedule(start_date=today, end_date='2026-12-31')
-next_trading_day = schedule.index[0].strftime('%A, %b %d, %Y')
-
-# --- EXECUTION ---
-if st.button("▶ Run Analysis"):
+# --- DATA PROCESSING ---
+try:
     data = pd.read_csv("market_data.csv", index_col=0, parse_dates=True)
     
-    # Filter by Start Year
+    # Filter by Year
     data = data[data.index.year >= start_year]
-    
-    # Select Universe & Benchmark
+
+    # Assign Universe & Benchmark
     if "Option B" in option:
         universe = X_EQUITY_TICKERS
         benchmark_ticker = "SPY"
-        module_name = "Equity"
     else:
         universe = FI_TICKERS
         benchmark_ticker = "AGG"
-        module_name = "Fixed Income"
 
-    # Run Engine
+    # Run Analysis
     results = run_trend_module(data[universe], data['SOFR_ANNUAL'], vol_target)
     
-    # Metrics Calculation
-    returns = results['returns']
-    cum_returns = results['curve']
-    bench_returns = data[benchmark_ticker].pct_change().fillna(0)
-    bench_curve = (1 + bench_returns).cumprod()
+    # --- CALCULATE METRICS ---
+    curve = results['curve']
+    rets = results['returns']
     
-    # Stats
-    ann_return = (cum_returns.iloc[-1]**(252/len(returns)) - 1)
-    sharpe = (returns.mean() * 252) / (returns.std() * np.sqrt(252))
+    # Sharpe (Excess over 0)
+    sharpe = (rets.mean() * 252) / (rets.std() * np.sqrt(252))
     
-    rolling_max = cum_returns.cummax()
-    drawdown = (cum_returns - rolling_max) / rolling_max
+    # Annualized Return
+    total_days = (curve.index[-1] - curve.index[0]).days
+    ann_return = (curve.iloc[-1]**(365/total_days) - 1)
+    
+    # Drawdowns
+    rolling_max = curve.cummax()
+    drawdown = (curve - rolling_max) / rolling_max
     max_dd_peak = drawdown.min()
-    
+    max_dd_daily = rets.min()
+
+    # NYSE Calendar for Next Day
+    nyse = mcal.get_calendar('NYSE')
+    schedule = nyse.schedule(start_date=datetime.now(), end_date='2026-12-31')
+    next_day = schedule.index[0].strftime('%Y-%m-%d')
+
     # --- OUTPUT UI ---
-    st.header(f"📊 {option} Results")
+    st.title(f"📊 {option}")
     
-    # Target Allocation Section
-    st.subheader(f"📅 Next Day Target Allocation: {next_trading_day}")
-    alloc_df = results['alloc']
-    st.table(alloc_df[alloc_df['Weight (%)'] > 0].sort_values("Weight (%)", ascending=False))
+    # Stats Row
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("Sharpe Ratio", f"{sharpe:.2f}")
+    c2.metric("Annual Return", f"{ann_return:.2%}")
+    c3.metric("Max DD (P-to-T)", f"{max_dd_peak:.2%}")
+    c4.metric("Max DD (Daily)", f"{max_dd_daily:.2%}")
+    c5.metric("Next Trade Date", next_day)
 
-    # Metrics Row
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Annualized Return", f"{ann_return:.2%}")
-    m2.metric("Sharpe Ratio", f"{sharpe:.2f}")
-    m3.metric("Max DD (Peak-to-Trough)", f"{max_dd_peak:.2%}")
-    m4.metric("Last Daily Return", f"{returns.iloc[-1]:.2%}")
+    # Allocation Table
+    st.subheader(f"📍 Target Allocation for {next_day}")
+    alloc = results['alloc']
+    st.dataframe(alloc[alloc['Weight (%)'] > 0].sort_values("Weight (%)", ascending=False), use_container_width=True)
 
-    # Chart
+    # Performance Chart
     st.subheader(f"Cumulative Return vs {benchmark_ticker}")
-    chart_data = pd.DataFrame({
-        "Strategy": cum_returns,
+    bench_curve = (1 + data[benchmark_ticker].pct_change().fillna(0)).cumprod()
+    # Normalize benchmark to start at 1.0 at start_year
+    bench_curve = bench_curve / bench_curve.iloc[0]
+    
+    chart_df = pd.DataFrame({
+        "Strategy": curve,
         f"Benchmark ({benchmark_ticker})": bench_curve
     })
-    st.line_chart(chart_data)
+    st.line_chart(chart_df)
+
+except Exception as e:
+    st.info("Please Click 'Sync Market Data' in the sidebar to initialize the engine.")
+    st.error(f"Waiting for data... (Technical details: {e})")
