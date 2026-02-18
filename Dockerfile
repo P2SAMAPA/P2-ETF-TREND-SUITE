@@ -1,26 +1,31 @@
-FROM python:3.10
+# Use a lightweight but stable Python base
+FROM python:3.10-slim
+
+# Set environment variables for speed and logging
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1
 
 WORKDIR /app
 
-# Copy requirements first (better layer caching)
+# Install system dependencies needed for pandas/datareader
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy only requirements first to leverage Docker cache
 COPY requirements.txt .
 
-RUN pip install --upgrade pip
-RUN pip install --no-cache-dir -r requirements.txt
+# Install dependencies (use --no-cache-dir to keep image small)
+RUN pip install --upgrade pip && \
+    pip install -r requirements.txt
 
-# Copy full project
+# Copy the rest of the application
 COPY . .
 
+# Ensure the app runs on the port HF expects (7860 for Docker)
 EXPOSE 7860
 
-ENV STREAMLIT_SERVER_PORT=7860
-ENV STREAMLIT_SERVER_ADDRESS=0.0.0.0
-ENV STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
-
-# Diagnostic startup command
-CMD ["bash", "-c", "echo '===== CONTAINER BOOTING ====='; \
-echo 'Python Version:'; python -V; \
-echo 'Current Directory:'; pwd; \
-echo 'Directory Listing:'; ls -la; \
-echo 'Starting Streamlit...'; \
-python -m streamlit run app.py --server.headless=true"]
+# Correct entrypoint for Streamlit in a container
+ENTRYPOINT ["streamlit", "run", "app.py", "--server.port=7860", "--server.address=0.0.0.0"]
