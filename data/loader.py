@@ -12,36 +12,45 @@ FILENAME = "market_data.csv"
 X_EQUITY_TICKERS = ["XLK", "XLY", "XLP", "XLE", "XLV", "XLI", "XLB", "XLRE", "XLU", "XLC", "XLF", "XBI", "XME", "XOP", "XHB", "XSD", "XRT", "XPH", "XES", "XAR", "XHS", "XHE", "XSW", "XTN", "XTL", "XNTK", "XITK"]
 FI_TICKERS = ["TLT", "IEF", "TIP", "TBT", "GLD", "SLV", "VGIT", "VCLT", "VCIT", "HYG", "PFF", "MBB", "VNQ", "LQD", "AGG"]
 
-def load_from_hf():
+def get_safe_token():
+    """Bypasses Streamlit's hard-fail on missing secrets.toml by using environment fallback."""
     try:
-        token = st.secrets.get("HF_TOKEN") or os.getenv("HF_TOKEN")
-        if not token: return None
+        # Try Streamlit secrets first
+        return st.secrets["HF_TOKEN"]
+    except Exception:
+        # Standard environment variable fallback (How HF actually stores them)
+        return os.getenv("HF_TOKEN")
+
+def load_from_hf():
+    token = get_safe_token()
+    if not token: return None
+    try:
         path = hf_hub_download(repo_id=REPO_ID, filename=FILENAME, repo_type="dataset", token=token)
         return pd.read_csv(path, index_col=0, parse_dates=True)
     except:
         return None
 
 def seed_dataset_from_scratch():
-    # Include benchmarks SPY and AGG
+    # Include benchmarks for comparison logic
     tickers = list(set(X_EQUITY_TICKERS + FI_TICKERS + ["SPY", "AGG"]))
     master_df = pd.DataFrame()
     status = st.empty()
     progress = st.progress(0)
     
     for i, t in enumerate(tickers):
-        status.text(f"Fetching {t} from Stooq...")
+        status.text(f"🛰️ Fetching {t} from Stooq...")
         try:
             data = web.DataReader(f"{t}.US", 'stooq', start='2008-01-01')
             if not data.empty:
                 master_df[t] = data['Close'].sort_index()
-            time.sleep(0.6)
+            time.sleep(0.7) # Polite delay
         except:
             try:
                 master_df[t] = yf.download(t, start="2008-01-01", progress=False)['Adj Close']
             except: pass
         progress.progress((i + 1) / len(tickers))
 
-    # Add SOFR Rate
+    # Add SOFR Rate (Cash Interest)
     try:
         sofr = web.DataReader('SOFR', 'fred', start="2008-01-01").ffill()
         master_df['SOFR_ANNUAL'] = sofr / 100
@@ -64,6 +73,9 @@ def sync_incremental_data(df):
     return combined
 
 def upload_to_hf(path):
+    token = get_safe_token()
+    if not token:
+        st.error("❌ Cannot upload: HF_TOKEN is missing from Space Secrets.")
+        return
     api = HfApi()
-    token = st.secrets.get("HF_TOKEN") or os.getenv("HF_TOKEN")
     api.upload_file(path_or_fileobj=path, path_in_repo=FILENAME, repo_id=REPO_ID, repo_type="dataset", token=token)
