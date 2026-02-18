@@ -25,6 +25,7 @@ def run_trend_module(price_df, bench_series, sofr_series, target_vol, start_yr, 
     
     # 4. Volatility Target Weighting
     active_counts = signals.sum(axis=1)
+    # Target Vol / Asset Vol, distributed across active signals
     raw_weights = (target_vol / asset_vol).divide(active_counts, axis=0).replace([np.inf, -np.inf], 0).fillna(0)
     final_weights = raw_weights * signals
     
@@ -50,17 +51,13 @@ def run_trend_module(price_df, bench_series, sofr_series, target_vol, start_yr, 
     ann_vol = portfolio_ret[oos_mask].std() * np.sqrt(252)
     dd = (equity_curve / equity_curve.cummax()) - 1
     
-    # --- FIXED NEXT DAY LOGIC ---
+    # --- NEXT DAY TRADING LOGIC ---
     nyse = mcal.get_calendar('NYSE')
-    last_dt = price_df.index[-1]
-    
-    # Generate schedule starting from the day AFTER last_dt to ensure we find the future open
-    search_start = last_dt + pd.Timedelta(days=1)
+    # Use real-world today to anchor the search for the NEXT session
+    today_dt = pd.Timestamp.now().normalize()
+    search_start = today_dt + pd.Timedelta(days=1)
     sched = nyse.schedule(start_date=search_start, end_date=search_start + pd.Timedelta(days=10))
-    
-    # Take the first valid trading day from the future schedule
     next_day = sched.index[0] 
-    # ----------------------------
     
     return {
         'equity_curve': equity_curve,
@@ -68,6 +65,7 @@ def run_trend_module(price_df, bench_series, sofr_series, target_vol, start_yr, 
         'ann_ret': ann_ret,
         'sharpe': (ann_ret - sofr_series.iloc[-1]) / ann_vol if ann_vol > 0 else 0,
         'max_dd': dd.min(),
+        'avg_daily_dd': dd.mean(),
         'next_day': next_day.date(),
         'current_weights': final_weights.iloc[-1],
         'cash_weight': cash_weight.iloc[-1],
