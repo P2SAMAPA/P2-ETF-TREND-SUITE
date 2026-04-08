@@ -1,7 +1,6 @@
 streamlit
 pandas
 numpy
-pandas-datareader
 yfinance
 huggingface-hub
 pandas-market-calendars
