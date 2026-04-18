@@ -6,7 +6,7 @@ import streamlit as st
 import requests
 
 # --- GLOBAL CONSTANTS ---
-X_EQUITY_TICKERS = ["XLK", "XLY", "XLP", "XLE", "XLV", "XLI", "XLB", "XLRE", "XLU", "XLC", "XLF", "XBI", "XME", "XHB", "XSD", "XRT", "GDX", "XAR", "XLB", "XLRE", "XNTK"]
+X_EQUITY_TICKERS = ["XLK", "XLY", "XLP", "XLE", "XLV", "XLI", "XLB", "XLRE", "XLU", "XLC", "XLF", "XBI", "XME", "XHB", "XSD", "XRT", "GDX", "XAR", "XLB", "XLRE", "IWM", "IWF", "XNTK"]
 FI_TICKERS = ["TLT", "IEF", "TIP", "GLD", "SLV", "VGIT", "VCLT", "VCIT", "HYG", "PFF", "MBB", "VNQ", "LQD", "AGG"]
 REPO_ID = "P2SAMAPA/etf_trend_data"
 FILENAME = "market_data.csv"
